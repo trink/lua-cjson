@@ -22,6 +22,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <lauxlib.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -29,19 +30,11 @@
 
 #include "strbuf.h"
 
-static void die(const char *fmt, ...)
-{
-    va_list arg;
+#ifdef _WIN32
+#define snprintf _snprintf
+#endif
 
-    va_start(arg, fmt);
-    vfprintf(stderr, fmt, arg);
-    va_end(arg);
-    fprintf(stderr, "\n");
-
-    exit(-1);
-}
-
-void strbuf_init(strbuf_t *s, int len)
+void strbuf_init(strbuf_t *s, int len, lua_State *l)
 {
     int size;
 
@@ -50,6 +43,9 @@ void strbuf_init(strbuf_t *s, int len)
     else
         size = len + 1;         /* \0 terminator */
 
+    if (STRBUF_MAX_SIZE > 0 && size > STRBUF_MAX_SIZE) {
+        luaL_error(l, "STRBUF_MAX_SIZE exceeded");
+    }
     s->buf = NULL;
     s->size = size;
     s->length = 0;
@@ -57,23 +53,24 @@ void strbuf_init(strbuf_t *s, int len)
     s->dynamic = 0;
     s->reallocs = 0;
     s->debug = 0;
+    s->lua = l;
 
     s->buf = malloc(size);
     if (!s->buf)
-        die("Out of memory");
+        luaL_error(l, "Out of memory");
 
     strbuf_ensure_null(s);
 }
 
-strbuf_t *strbuf_new(int len)
+strbuf_t *strbuf_new(int len, lua_State *l)
 {
     strbuf_t *s;
 
     s = malloc(sizeof(strbuf_t));
     if (!s)
-        die("Out of memory");
+        luaL_error(l, "Out of memory");
 
-    strbuf_init(s, len);
+    strbuf_init(s, len, l);
 
     /* Dynamic strbuf allocation / deallocation */
     s->dynamic = 1;
@@ -86,7 +83,7 @@ void strbuf_set_increment(strbuf_t *s, int increment)
     /* Increment > 0:  Linear buffer growth rate
      * Increment < -1: Exponential buffer growth rate */
     if (increment == 0 || increment == -1)
-        die("BUG: Invalid string increment");
+        luaL_error(s->lua, "BUG: Invalid string increment");
 
     s->increment = increment;
 }
@@ -136,7 +133,7 @@ static int calculate_new_size(strbuf_t *s, int len)
     int reqsize, newsize;
 
     if (len <= 0)
-        die("BUG: Invalid strbuf length requested");
+        luaL_error(s->lua, "BUG: Invalid strbuf length requested");
 
     /* Ensure there is room for optional NULL termination */
     reqsize = len + 1;
@@ -145,6 +142,9 @@ static int calculate_new_size(strbuf_t *s, int len)
     if (s->size > reqsize)
         return reqsize;
 
+    if (STRBUF_MAX_SIZE > 0 && reqsize > STRBUF_MAX_SIZE) {
+        luaL_error(s->lua, "STRBUF_MAX_SIZE exceeded");
+    }
     newsize = s->size;
     if (s->increment < 0) {
         /* Exponential sizing */
@@ -154,7 +154,9 @@ static int calculate_new_size(strbuf_t *s, int len)
         /* Linear sizing */
         newsize = ((newsize + s->increment - 1) / s->increment) * s->increment;
     }
-
+    if (newsize > STRBUF_MAX_SIZE) {
+        newsize = STRBUF_MAX_SIZE;
+    }
     return newsize;
 }
 
@@ -175,7 +177,7 @@ void strbuf_resize(strbuf_t *s, int len)
     s->size = newsize;
     s->buf = realloc(s->buf, s->size);
     if (!s->buf)
-        die("Out of memory");
+        luaL_error(s->lua, "Out of memory");
     s->reallocs++;
 }
 
@@ -211,7 +213,7 @@ void strbuf_append_fmt(strbuf_t *s, int len, const char *fmt, ...)
     va_end(arg);
 
     if (fmt_len < 0)
-        die("BUG: Unable to convert number");  /* This should never happen.. */
+        luaL_error(s->lua, "BUG: Unable to convert number");  /* This should never happen.. */
 
     s->length += fmt_len;
 }
@@ -239,7 +241,7 @@ void strbuf_append_fmt_retry(strbuf_t *s, const char *fmt, ...)
         if (fmt_len <= empty_len)
             break;  /* SUCCESS */
         if (try > 0)
-            die("BUG: length of formatted string changed");
+            luaL_error(s->lua, "BUG: length of formatted string changed");
 
         strbuf_resize(s, s->length + fmt_len);
     }

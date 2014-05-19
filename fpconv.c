@@ -35,6 +35,10 @@
 
 #include "fpconv.h"
 
+#ifdef _WIN32
+#define snprintf _snprintf
+#endif
+
 /* Lua CJSON assumes the locale is the same for all threads within a
  * process and doesn't change after initialisation.
  *

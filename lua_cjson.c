@@ -54,6 +54,12 @@
 #define CJSON_VERSION   "2.1devel"
 #endif
 
+#ifdef _WIN32
+#define snprintf _snprintf
+#define strncasecmp _strnicmp
+#define inline
+#endif
+
 /* Workaround for Solaris platforms missing isinf() */
 #if !defined(isinf) && (defined(USE_INTERNAL_ISINF) || defined(MISSING_ISINF))
 #define isinf(x) (!isnan(x) && isnan((x) - (x)))
@@ -313,7 +319,7 @@ static int json_cfg_encode_keep_buffer(lua_State *l)
     /* Init / free the buffer if the setting has changed */
     if (old_value ^ cfg->encode_keep_buffer) {
         if (cfg->encode_keep_buffer)
-            strbuf_init(&cfg->encode_buf, 0);
+            strbuf_init(&cfg->encode_buf, 0, l);
         else
             strbuf_free(&cfg->encode_buf);
     }
@@ -392,7 +398,7 @@ static void json_create_config(lua_State *l)
     cfg->encode_number_precision = DEFAULT_ENCODE_NUMBER_PRECISION;
 
 #if DEFAULT_ENCODE_KEEP_BUFFER > 0
-    strbuf_init(&cfg->encode_buf, 0);
+    strbuf_init(&cfg->encode_buf, 0, l);
 #endif
 
     /* Decoding init */
@@ -461,7 +467,7 @@ static void json_encode_exception(lua_State *l, json_config_t *cfg, strbuf_t *js
 static void json_append_string(lua_State *l, strbuf_t *json, int lindex)
 {
     const char *escstr;
-    int i;
+    size_t i;
     const char *str;
     size_t len;
 
@@ -506,7 +512,7 @@ static int lua_array_length(lua_State *l, json_config_t *cfg, strbuf_t *json)
             /* Integer >= 1 ? */
             if (floor(k) == k && k >= 1) {
                 if (k > max)
-                    max = k;
+                    max = (int)k;
                 items++;
                 lua_pop(l, 1);
                 continue;
@@ -719,7 +725,7 @@ static int json_encode(lua_State *l)
     if (!cfg->encode_keep_buffer) {
         /* Use private buffer */
         encode_buf = &local_encode_buf;
-        strbuf_init(encode_buf, 0);
+        strbuf_init(encode_buf, 0, l);
     } else {
         /* Reuse existing buffer */
         encode_buf = &cfg->encode_buf;
@@ -1280,7 +1286,7 @@ static int json_decode(lua_State *l)
     /* Ensure the temporary buffer can hold the entire string.
      * This means we no longer need to do length checks since the decoded
      * string must be smaller than the entire json string */
-    json.tmp = strbuf_new(json_len);
+    json.tmp = strbuf_new(json_len, l);
 
     json_next_token(&json, &token);
     json_process_value(l, &json, &token);
@@ -1407,7 +1413,7 @@ static int lua_cjson_safe_new(lua_State *l)
     return 1;
 }
 
-int luaopen_cjson(lua_State *l)
+LUALIB_API int luaopen_cjson(lua_State *l)
 {
     lua_cjson_new(l);
 

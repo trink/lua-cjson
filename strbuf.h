@@ -22,8 +22,13 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <lua.h>
 #include <stdlib.h>
 #include <stdarg.h>
+
+#ifdef _WIN32
+#define inline
+#endif
 
 /* Size: Total bytes allocated to *buf
  * Length: String length, excluding optional NULL terminator.
@@ -39,18 +44,22 @@ typedef struct {
     int dynamic;
     int reallocs;
     int debug;
+    lua_State *lua;
 } strbuf_t;
 
 #ifndef STRBUF_DEFAULT_SIZE
 #define STRBUF_DEFAULT_SIZE 1023
+#endif
+#ifndef STRBUF_MAX_SIZE
+#define STRBUF_MAX_SIZE 0
 #endif
 #ifndef STRBUF_DEFAULT_INCREMENT
 #define STRBUF_DEFAULT_INCREMENT -2
 #endif
 
 /* Initialise */
-extern strbuf_t *strbuf_new(int len);
-extern void strbuf_init(strbuf_t *s, int len);
+extern strbuf_t *strbuf_new(int len, lua_State *l);
+extern void strbuf_init(strbuf_t *s, int len, lua_State *l);
 extern void strbuf_set_increment(strbuf_t *s, int increment);
 
 /* Release */

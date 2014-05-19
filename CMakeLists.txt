@@ -1,8 +1,3 @@
-# If Lua is installed in a non-standard location, please set the LUA_DIR
-# environment variable to point to prefix for the install. Eg:
-#       Unix: export LUA_DIR=/home/user/pkg
-#       Windows: set LUA_DIR=c:\lua51
-
 project(lua-cjson C)
 cmake_minimum_required(VERSION 2.6)
 
@@ -15,8 +10,7 @@ if(NOT CMAKE_BUILD_TYPE)
         FORCE)
 endif()
 
-find_package(Lua51 REQUIRED)
-include_directories(${LUA_INCLUDE_DIR})
+include_directories("${EP_BASE}/include")
 
 if(NOT USE_INTERNAL_FPCONV)
     # Use libc number conversion routines (strtod(), sprintf())
@@ -43,6 +37,10 @@ else()
     endif()
 endif()
 
+if(STRBUF_MAX_SIZE)
+	add_definitions(-DSTRBUF_MAX_SIZE=${STRBUF_MAX_SIZE})
+endif()
+
 # Handle platforms missing isinf() macro (Eg, some Solaris systems).
 include(CheckSymbolExists)
 CHECK_SYMBOL_EXISTS(isinf math.h HAVE_ISINF)
@@ -50,27 +48,33 @@ if(NOT HAVE_ISINF)
     add_definitions(-DUSE_INTERNAL_ISINF)
 endif()
 
-set(_MODULE_LINK "${CMAKE_THREAD_LIBS_INIT}")
-get_filename_component(_lua_lib_dir ${LUA_LIBRARY} PATH)
-
-if(APPLE)
-    set(CMAKE_SHARED_MODULE_CREATE_C_FLAGS
-        "${CMAKE_SHARED_MODULE_CREATE_C_FLAGS} -undefined dynamic_lookup")
-endif()
+set(CJSON_SOURCE
+lua_cjson.c 
+strbuf.c 
+${FPCONV_SOURCES}
+)
 
 if(WIN32)
-    # Win32 modules need to be linked to the Lua library.
-    set(_MODULE_LINK ${LUA_LIBRARY} ${_MODULE_LINK})
-    set(_lua_module_dir "${_lua_lib_dir}")
     # Windows sprintf()/strtod() handle NaN/inf differently. Not supported.
     add_definitions(-DDISABLE_INVALID_NUMBERS)
+    add_library(cjson SHARED ${CJSON_SOURCE})
+    add_definitions(-DLUA_BUILD_AS_DLL -DLUA_CORE)
+    if(MSVC)
+       target_link_libraries(cjson "${EP_BASE}/lib/lua.lib")
+    else(MINGW)
+       set_target_properties(cjson PROPERTIES LINK_FLAGS -s)
+       if (ADDRESS_MODEL EQUAL 32)
+           set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -m32")
+           set_target_properties(cjson PROPERTIES LINK_FLAGS "-s -m32")
+       endif()
+       target_link_libraries(cjson "${EP_BASE}/lib/liblua.dll")
+    else()
+       message(FATAL_ERROR "Only MSVC and MinGW compilers are supported on Windows")
+    endif()
 else()
-    set(_lua_module_dir "${_lua_lib_dir}/lua/5.1")
+    add_library(cjson STATIC ${CJSON_SOURCE})
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -Wall -fPIC")
+    target_link_libraries(cjson "${EP_BASE}/lib/libluajit-5.1.a" "${CMAKE_THREAD_LIBS_INIT}")
 endif()
 
-add_library(cjson MODULE lua_cjson.c strbuf.c ${FPCONV_SOURCES})
-set_target_properties(cjson PROPERTIES PREFIX "")
-target_link_libraries(cjson ${_MODULE_LINK})
-install(TARGETS cjson DESTINATION "${_lua_module_dir}")
-
-# vi:ai et sw=4 ts=4:
+install(TARGETS cjson DESTINATION lib)
