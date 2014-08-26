@@ -321,7 +321,7 @@ static int json_cfg_encode_keep_buffer(lua_State *l)
     /* Init / free the buffer if the setting has changed */
     if (old_value ^ cfg->encode_keep_buffer) {
         if (cfg->encode_keep_buffer)
-            strbuf_init(&cfg->encode_buf, 0, l);
+            strbuf_init(&cfg->encode_buf, 0, l, cfg->encode_buf.max_size);
         else
             strbuf_free(&cfg->encode_buf);
     }
@@ -410,7 +410,7 @@ static void json_create_config(lua_State *l)
     cfg->encode_number_precision = DEFAULT_ENCODE_NUMBER_PRECISION;
 
 #if DEFAULT_ENCODE_KEEP_BUFFER > 0
-    strbuf_init(&cfg->encode_buf, 0, l);
+    strbuf_init(&cfg->encode_buf, 0, l, 0);
 #endif
 
     /* Decoding init */
@@ -737,7 +737,7 @@ static int json_encode(lua_State *l)
     if (!cfg->encode_keep_buffer) {
         /* Use private buffer */
         encode_buf = &local_encode_buf;
-        strbuf_init(encode_buf, 0, l);
+        strbuf_init(encode_buf, 0, l, cfg->encode_buf.max_size);
     } else {
         /* Reuse existing buffer */
         encode_buf = &cfg->encode_buf;
@@ -1450,6 +1450,31 @@ int luaopen_cjson_safe(lua_State *l)
 
     /* Return cjson.safe table */
     return 1;
+}
+
+int set_encode_max_buffer(lua_State *l, int index, int max_size)
+{
+    lua_getfield(l, index, "encode");
+    if (!lua_isfunction(l, -1)) {
+        lua_pop(l, 1); // remove encode function
+        return 1;
+    }
+    if (NULL == lua_getupvalue(l, -1, 1)) {
+        lua_pop(l, 1); // remove encode function
+        return 1;
+    }
+    json_config_t *cfg = lua_touserdata(l, -1);
+    lua_pop(l, 2); // remove encode and the upvalue
+
+    if (cfg) {
+        cfg->encode_buf.max_size = max_size;
+        if (cfg->encode_keep_buffer && max_size < cfg->encode_buf.size) {
+            strbuf_resize(&cfg->encode_buf, max_size);
+        }
+    } else {
+        return 1;
+    }
+    return 0;
 }
 
 /* vi:ai et sw=4 ts=4:

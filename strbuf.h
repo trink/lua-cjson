@@ -44,14 +44,12 @@ typedef struct {
     int dynamic;
     int reallocs;
     int debug;
+    int max_size;
     lua_State *lua;
 } strbuf_t;
 
 #ifndef STRBUF_DEFAULT_SIZE
 #define STRBUF_DEFAULT_SIZE 1023
-#endif
-#ifndef STRBUF_MAX_SIZE
-#define STRBUF_MAX_SIZE 0
 #endif
 #ifndef STRBUF_DEFAULT_INCREMENT
 #define STRBUF_DEFAULT_INCREMENT -2
@@ -59,7 +57,7 @@ typedef struct {
 
 /* Initialise */
 extern strbuf_t *strbuf_new(int len, lua_State *l);
-extern void strbuf_init(strbuf_t *s, int len, lua_State *l);
+extern void strbuf_init(strbuf_t *s, int len, lua_State *l, int max_size);
 extern void strbuf_set_increment(strbuf_t *s, int increment);
 
 /* Release */

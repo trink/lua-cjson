@@ -34,18 +34,19 @@
 #define snprintf _snprintf
 #endif
 
-void strbuf_init(strbuf_t *s, int len, lua_State *l)
+void strbuf_init(strbuf_t *s, int len, lua_State *l, int max_size)
 {
     int size;
 
     if (len <= 0)
-        size = STRBUF_DEFAULT_SIZE;
+        if (max_size > 0 && max_size < STRBUF_DEFAULT_SIZE) {
+            size = max_size;
+        } else {
+            size = STRBUF_DEFAULT_SIZE;
+        }
     else
         size = len + 1;         /* \0 terminator */
 
-    if (STRBUF_MAX_SIZE > 0 && size > STRBUF_MAX_SIZE) {
-        luaL_error(l, "STRBUF_MAX_SIZE exceeded");
-    }
     s->buf = NULL;
     s->size = size;
     s->length = 0;
@@ -53,11 +54,12 @@ void strbuf_init(strbuf_t *s, int len, lua_State *l)
     s->dynamic = 0;
     s->reallocs = 0;
     s->debug = 0;
+    s->max_size = max_size;
     s->lua = l;
 
     s->buf = malloc(size);
     if (!s->buf)
-        luaL_error(l, "Out of memory");
+        luaL_error(l, "strbuf_init out of memory");
 
     strbuf_ensure_null(s);
 }
@@ -68,9 +70,9 @@ strbuf_t *strbuf_new(int len, lua_State *l)
 
     s = malloc(sizeof(strbuf_t));
     if (!s)
-        luaL_error(l, "Out of memory");
+        luaL_error(l, "strbuf_new out of memory");
 
-    strbuf_init(s, len, l);
+    strbuf_init(s, len, l, 0);
 
     /* Dynamic strbuf allocation / deallocation */
     s->dynamic = 1;
@@ -142,8 +144,8 @@ static int calculate_new_size(strbuf_t *s, int len)
     if (s->size > reqsize)
         return reqsize;
 
-    if (STRBUF_MAX_SIZE > 0 && reqsize > STRBUF_MAX_SIZE) {
-        luaL_error(s->lua, "STRBUF_MAX_SIZE exceeded");
+    if (s->max_size > 0 && reqsize > s->max_size) {
+        luaL_error(s->lua, "strbuf max_size exceeded");
     }
     newsize = s->size;
     if (s->increment < 0) {
@@ -154,8 +156,8 @@ static int calculate_new_size(strbuf_t *s, int len)
         /* Linear sizing */
         newsize = ((newsize + s->increment - 1) / s->increment) * s->increment;
     }
-    if (newsize > STRBUF_MAX_SIZE) {
-        newsize = STRBUF_MAX_SIZE;
+    if (newsize > s->max_size) {
+        newsize = s->max_size;
     }
     return newsize;
 }
@@ -177,7 +179,7 @@ void strbuf_resize(strbuf_t *s, int len)
     s->size = newsize;
     s->buf = realloc(s->buf, s->size);
     if (!s->buf)
-        luaL_error(s->lua, "Out of memory");
+        luaL_error(s->lua, "strbuf_resize out of memory");
     s->reallocs++;
 }
 

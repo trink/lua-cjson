@@ -37,10 +37,6 @@ else()
     endif()
 endif()
 
-if(STRBUF_MAX_SIZE)
-	add_definitions(-DSTRBUF_MAX_SIZE=${STRBUF_MAX_SIZE})
-endif()
-
 # Handle platforms missing isinf() macro (Eg, some Solaris systems).
 include(CheckSymbolExists)
 CHECK_SYMBOL_EXISTS(isinf math.h HAVE_ISINF)
