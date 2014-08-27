@@ -1452,7 +1452,7 @@ int luaopen_cjson_safe(lua_State *l)
     return 1;
 }
 
-int set_encode_max_buffer(lua_State *l, int index, unsigned max_size)
+LUALIB_API int set_encode_max_buffer(lua_State *l, int index, unsigned max_size)
 {
     lua_getfield(l, index, "encode");
     if (!lua_isfunction(l, -1)) {
