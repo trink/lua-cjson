@@ -1452,7 +1452,7 @@ int luaopen_cjson_safe(lua_State *l)
     return 1;
 }
 
-int set_encode_max_buffer(lua_State *l, int index, int max_size)
+int set_encode_max_buffer(lua_State *l, int index, unsigned max_size)
 {
     lua_getfield(l, index, "encode");
     if (!lua_isfunction(l, -1)) {
@@ -1467,9 +1467,10 @@ int set_encode_max_buffer(lua_State *l, int index, int max_size)
     lua_pop(l, 2); // remove encode and the upvalue
 
     if (cfg) {
-        cfg->encode_buf.max_size = max_size;
-        if (cfg->encode_keep_buffer && max_size < cfg->encode_buf.size) {
-            strbuf_resize(&cfg->encode_buf, max_size);
+        cfg->encode_buf.max_size = (int)max_size;
+        if (cfg->encode_keep_buffer && max_size
+            && cfg->encode_buf.max_size < cfg->encode_buf.size) {
+            strbuf_resize(&cfg->encode_buf, cfg->encode_buf.max_size);
         }
     } else {
         return 1;

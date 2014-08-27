@@ -156,7 +156,7 @@ static int calculate_new_size(strbuf_t *s, int len)
         /* Linear sizing */
         newsize = ((newsize + s->increment - 1) / s->increment) * s->increment;
     }
-    if (newsize > s->max_size) {
+    if (s->max_size > 0 && newsize > s->max_size) {
         newsize = s->max_size;
     }
     return newsize;
@@ -177,9 +177,14 @@ void strbuf_resize(strbuf_t *s, int len)
     }
 
     s->size = newsize;
-    s->buf = realloc(s->buf, s->size);
-    if (!s->buf)
+    char *b = realloc(s->buf, s->size);
+    if (!b) {
+        // the original memory is still intact leave it untouched
+        // incase the caller recovers and trys to reuse it
         luaL_error(s->lua, "strbuf_resize out of memory");
+    } else {
+        s->buf = b;
+    }
     s->reallocs++;
 }
 
