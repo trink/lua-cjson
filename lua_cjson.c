@@ -1378,11 +1378,9 @@ static int lua_cjson_new(lua_State *l)
         { "encode_max_depth", json_cfg_encode_max_depth },
         { "decode_max_depth", json_cfg_decode_max_depth },
         { "encode_number_precision", json_cfg_encode_number_precision },
-        { "encode_keep_buffer", json_cfg_encode_keep_buffer },
         { "encode_invalid_numbers", json_cfg_encode_invalid_numbers },
         { "decode_invalid_numbers", json_cfg_decode_invalid_numbers },
         { "decode_null", json_cfg_decode_null },
-        { "new", lua_cjson_new },
         { NULL, NULL }
     };
 
