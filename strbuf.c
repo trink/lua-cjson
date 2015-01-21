@@ -145,7 +145,7 @@ static int calculate_new_size(strbuf_t *s, int len)
         return reqsize;
 
     if (s->max_size > 0 && reqsize > s->max_size) {
-        luaL_error(s->lua, "strbuf max_size exceeded");
+        luaL_error(s->lua, "strbuf output_limit exceeded");
     }
     newsize = s->size;
     if (s->increment < 0) {

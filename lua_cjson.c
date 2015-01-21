@@ -51,7 +51,7 @@
 #endif
 
 #ifndef CJSON_VERSION
-#define CJSON_VERSION   "2.1devel"
+#define CJSON_VERSION   "2.1-Heka"
 #endif
 
 #ifdef _WIN32
@@ -73,7 +73,6 @@
 #define DEFAULT_ENCODE_INVALID_NUMBERS 0
 #define DEFAULT_DECODE_INVALID_NUMBERS 1
 #define DEFAULT_DECODE_NULL 0
-#define DEFAULT_ENCODE_KEEP_BUFFER 1
 #define DEFAULT_ENCODE_NUMBER_PRECISION 14
 
 #ifdef DISABLE_INVALID_NUMBERS
@@ -120,8 +119,6 @@ typedef struct {
     json_token_type_t ch2token[256];
     char escape2char[256];  /* Decoding */
 
-    /* encode_buf is only allocated and used when
-     * encode_keep_buffer is set */
     strbuf_t encode_buf;
 
     int encode_sparse_convert;
@@ -130,7 +127,6 @@ typedef struct {
     int encode_max_depth;
     int encode_invalid_numbers;     /* 2 => Encode as "null" */
     int encode_number_precision;
-    int encode_keep_buffer;
 
     int decode_invalid_numbers;
     int decode_max_depth;
@@ -208,17 +204,11 @@ static json_config_t *json_fetch_config(lua_State *l)
     return cfg;
 }
 
-/* Ensure the correct number of arguments have been provided.
- * Pad with nil to allow other functions to simply check arg[i]
- * to find whether an argument was provided */
+/* Ensure the correct number of arguments have been provided. */
 static json_config_t *json_arg_init(lua_State *l, int args)
 {
     luaL_argcheck(l, lua_gettop(l) <= args, args + 1,
                   "found too many arguments");
-
-    while (lua_gettop(l) < args)
-        lua_pushnil(l);
-
     return json_fetch_config(l);
 }
 
@@ -308,26 +298,6 @@ static int json_cfg_encode_number_precision(lua_State *l)
     return json_integer_option(l, 1, &cfg->encode_number_precision, 1, 14);
 }
 
-/* Configures JSON encoding buffer persistence */
-static int json_cfg_encode_keep_buffer(lua_State *l)
-{
-    json_config_t *cfg = json_arg_init(l, 1);
-    int old_value;
-
-    old_value = cfg->encode_keep_buffer;
-
-    json_enum_option(l, 1, &cfg->encode_keep_buffer, NULL, 1);
-
-    /* Init / free the buffer if the setting has changed */
-    if (old_value ^ cfg->encode_keep_buffer) {
-        if (cfg->encode_keep_buffer)
-            strbuf_init(&cfg->encode_buf, 0, l, cfg->encode_buf.max_size);
-        else
-            strbuf_free(&cfg->encode_buf);
-    }
-
-    return 1;
-}
 
 #if defined(DISABLE_INVALID_NUMBERS) && !defined(USE_INTERNAL_FPCONV)
 void json_verify_invalid_number_setting(lua_State *l, int *setting)
@@ -406,12 +376,12 @@ static void json_create_config(lua_State *l)
     cfg->encode_invalid_numbers = DEFAULT_ENCODE_INVALID_NUMBERS;
     cfg->decode_invalid_numbers = DEFAULT_DECODE_INVALID_NUMBERS;
     cfg->decode_null = DEFAULT_DECODE_NULL;
-    cfg->encode_keep_buffer = DEFAULT_ENCODE_KEEP_BUFFER;
     cfg->encode_number_precision = DEFAULT_ENCODE_NUMBER_PRECISION;
 
-#if DEFAULT_ENCODE_KEEP_BUFFER > 0
-    strbuf_init(&cfg->encode_buf, 0, l, 0);
-#endif
+    lua_getfield(l, LUA_REGISTRYINDEX, "lsb_output_limit");
+    int max_size = (int)lua_tointeger(l, -1);
+    lua_pop(l, 1);
+    strbuf_init(&cfg->encode_buf, 0, l, max_size);
 
     /* Decoding init */
 
@@ -464,8 +434,6 @@ static void json_create_config(lua_State *l)
 static void json_encode_exception(lua_State *l, json_config_t *cfg, strbuf_t *json, int lindex,
                                   const char *reason)
 {
-    if (!cfg->encode_keep_buffer)
-        strbuf_free(json);
     luaL_error(l, "Cannot serialise %s: %s",
                   lua_typename(l, lua_type(l, lindex)), reason);
 }
@@ -564,9 +532,6 @@ static void json_check_encode_depth(lua_State *l, json_config_t *cfg,
      * slots, it would still be an improper use of the API. */
     if (current_depth <= cfg->encode_max_depth && lua_checkstack(l, 3))
         return;
-
-    if (!cfg->encode_keep_buffer)
-        strbuf_free(json);
 
     luaL_error(l, "Cannot serialise, excessive nesting (%d)",
                current_depth);
@@ -727,31 +692,18 @@ static void json_append_data(lua_State *l, json_config_t *cfg,
 static int json_encode(lua_State *l)
 {
     json_config_t *cfg = json_fetch_config(l);
-    strbuf_t local_encode_buf;
     strbuf_t *encode_buf;
     char *json;
     int len;
 
     luaL_argcheck(l, lua_gettop(l) == 1, 1, "expected 1 argument");
-
-    if (!cfg->encode_keep_buffer) {
-        /* Use private buffer */
-        encode_buf = &local_encode_buf;
-        strbuf_init(encode_buf, 0, l, cfg->encode_buf.max_size);
-    } else {
-        /* Reuse existing buffer */
-        encode_buf = &cfg->encode_buf;
-        strbuf_reset(encode_buf);
-    }
+    encode_buf = &cfg->encode_buf;
+    strbuf_reset(encode_buf);
 
     json_append_data(l, cfg, 0, encode_buf);
     json = strbuf_string(encode_buf, &len);
 
     lua_pushlstring(l, json, len);
-
-    if (!cfg->encode_keep_buffer)
-        strbuf_free(encode_buf);
-
     return 1;
 }
 
@@ -1340,34 +1292,6 @@ static void luaL_setfuncs (lua_State *l, const luaL_Reg *reg, int nup)
 }
 #endif
 
-/* Call target function in protected mode with all supplied args.
- * Assumes target function only returns a single non-nil value.
- * Convert and return thrown errors as: nil, "error message" */
-static int json_protect_conversion(lua_State *l)
-{
-    int err;
-
-    /* Deliberately throw an error for invalid arguments */
-    luaL_argcheck(l, lua_gettop(l) == 1, 1, "expected 1 argument");
-
-    /* pcall() the function stored as upvalue(1) */
-    lua_pushvalue(l, lua_upvalueindex(1));
-    lua_insert(l, 1);
-    err = lua_pcall(l, 1, 1, 0);
-    if (!err)
-        return 1;
-
-    if (err == LUA_ERRRUN) {
-        lua_pushnil(l);
-        lua_insert(l, -2);
-        return 2;
-    }
-
-    /* Since we are not using a custom error handler, the only remaining
-     * errors are memory related */
-    return luaL_error(l, "Memory allocation error in CJSON protected call");
-}
-
 /* Return cjson module table */
 static int lua_cjson_new(lua_State *l)
 {
@@ -1407,27 +1331,6 @@ static int lua_cjson_new(lua_State *l)
     return 1;
 }
 
-/* Return cjson.safe module table */
-static int lua_cjson_safe_new(lua_State *l)
-{
-    const char *func[] = { "decode", "encode", NULL };
-    int i;
-
-    lua_cjson_new(l);
-
-    /* Fix new() method */
-    lua_pushcfunction(l, lua_cjson_safe_new);
-    lua_setfield(l, -2, "new");
-
-    for (i = 0; func[i]; i++) {
-        lua_getfield(l, -1, func[i]);
-        lua_pushcclosure(l, json_protect_conversion, 1);
-        lua_setfield(l, -2, func[i]);
-    }
-
-    return 1;
-}
-
 LUALIB_API int luaopen_cjson(lua_State *l)
 {
     lua_cjson_new(l);
@@ -1438,40 +1341,6 @@ LUALIB_API int luaopen_cjson(lua_State *l)
 
     /* Return cjson table */
     return 1;
-}
-
-int luaopen_cjson_safe(lua_State *l)
-{
-    lua_cjson_safe_new(l);
-
-    /* Return cjson.safe table */
-    return 1;
-}
-
-LUALIB_API int set_encode_max_buffer(lua_State *l, int index, unsigned max_size)
-{
-    lua_getfield(l, index, "encode");
-    if (!lua_isfunction(l, -1)) {
-        lua_pop(l, 1); // remove encode function
-        return 1;
-    }
-    if (NULL == lua_getupvalue(l, -1, 1)) {
-        lua_pop(l, 1); // remove encode function
-        return 1;
-    }
-    json_config_t *cfg = lua_touserdata(l, -1);
-    lua_pop(l, 2); // remove encode and the upvalue
-
-    if (cfg) {
-        cfg->encode_buf.max_size = (int)max_size;
-        if (cfg->encode_keep_buffer && max_size
-            && cfg->encode_buf.max_size < cfg->encode_buf.size) {
-            strbuf_resize(&cfg->encode_buf, cfg->encode_buf.max_size);
-        }
-    } else {
-        return 1;
-    }
-    return 0;
 }
 
 /* vi:ai et sw=4 ts=4:
