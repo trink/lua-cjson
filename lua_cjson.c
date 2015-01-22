@@ -378,9 +378,14 @@ static void json_create_config(lua_State *l)
     cfg->decode_null = DEFAULT_DECODE_NULL;
     cfg->encode_number_precision = DEFAULT_ENCODE_NUMBER_PRECISION;
 
-    lua_getfield(l, LUA_REGISTRYINDEX, "lsb_output_limit");
-    int max_size = (int)lua_tointeger(l, -1);
-    lua_pop(l, 1);
+    int max_size = 0;
+    lua_getfield(l, LUA_REGISTRYINDEX, "lsb_config");
+    if (lua_type(l, -1) == LUA_TTABLE) {
+        lua_getfield(l, -1, "output_limit");
+        max_size = (int)lua_tointeger(l, -1); // if not found defaults to 0
+        lua_pop(l, 1); // remove limit
+    }
+    lua_pop(l, 1); // remove config
     strbuf_init(&cfg->encode_buf, 0, l, max_size);
 
     /* Decoding init */
