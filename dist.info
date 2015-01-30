@@ -1,0 +1,10 @@
+name = "lua-cjson"
+version = "2.1.0"
+desc = "Lua CJSON provides fast JSON parsing and encoding support for Lua."
+author = "Mark Pulford"
+license = "MIT"
+url = "http://www.kyne.com.au/~mark/software/lua-cjson.php"
+maintainer = "Mike Trinkala"
+depends = {
+"lua ~>5.1"
+}

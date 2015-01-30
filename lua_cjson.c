@@ -51,7 +51,7 @@
 #endif
 
 #ifndef CJSON_VERSION
-#define CJSON_VERSION   "2.1-Heka"
+#define CJSON_VERSION   DIST_VERSION
 #endif
 
 #ifdef _WIN32
@@ -1336,7 +1336,7 @@ static int lua_cjson_new(lua_State *l)
     return 1;
 }
 
-LUALIB_API int luaopen_cjson(lua_State *l)
+int luaopen_cjson(lua_State *l)
 {
     lua_cjson_new(l);
 
