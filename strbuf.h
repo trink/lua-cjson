@@ -22,7 +22,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <lua.h>
+#include "lua.h"
 #include <stdlib.h>
 #include <stdarg.h>
 
