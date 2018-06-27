@@ -673,10 +673,15 @@ static void json_append_data(lua_State *l, json_config_t *cfg,
         current_depth++;
         json_check_encode_depth(l, cfg, current_depth, json);
         len = lua_array_length(l, cfg, json);
-        if (len > 0)
-            json_append_array(l, cfg, current_depth, json, len);
-        else
-            json_append_object(l, cfg, current_depth, json);
+#ifdef LUA_SANDBOX
+        if (len > 0 || (len == 0 && lua_tabletype(l, -1) == LUA_TTARRAY)) {
+#else
+        if (len > 0) {
+#endif
+          json_append_array(l, cfg, current_depth, json, len);
+        } else {
+          json_append_object(l, cfg, current_depth, json);
+        }
         break;
     case LUA_TNIL:
         strbuf_append_mem(json, "null", 4);
@@ -1173,7 +1178,7 @@ static void json_parse_array_context(lua_State *l, json_parse_t *json)
      * .., table, value */
     json_decode_descend(l, json, 2);
 
-    lua_newtable(l);
+    lua_createtable(l, 1, 0);
 
     json_next_token(json, &token);
 
